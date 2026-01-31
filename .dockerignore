@@ -1,0 +1,13 @@
+.git
+.gitignore
+.idea
+results/
+storage/
+*.csv
+*.log
+*.txt
+log_output.txt
+*.docx
+*.pdf
+run_experiment.sh
+.env

@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  # message broker untuk antrian task
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: exp_mq
+    ports: ["5672:5672", "15672:15672"]
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # kontainer utama untuk eksperimen
+  worker:
+    build: .
+    container_name: exp_worker
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    env_file: .env
+    volumes:
+      - ./storage/uploads:/root/storage/uploads
+      - ./storage/compressed:/root/storage/compressed
+      - ./results:/root/results
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - TZ=Asia/Jakarta
+    # batasan swap memory
+    memswap_limit: 4G
+    # batasan resource untuk eksperimen
+    # cpu limit diatur dinamis dari script via environment variable
+    # memory dibatasi 4gb sesuai metodologi
+    deploy:
+      resources:
+        limits:
+          cpus: '${CPU_LIMIT:-4.0}'
+          memory: 4G
+
+  # kontainer untuk memasukkan task ke queue
+  seeder:
+    build: .
+    container_name: exp_seeder
+    entrypoint: ["./seeder_bin"]
+    env_file: .env
+    depends_on: [rabbitmq]
+    volumes:
+      - ./storage/uploads:/root/storage/uploads
