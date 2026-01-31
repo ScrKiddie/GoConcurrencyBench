@@ -27,6 +27,11 @@ services:
       - /etc/localtime:/etc/localtime:ro
     environment:
       - TZ=Asia/Jakarta
+      - MODE
+      - IS_CONCURRENT
+      - USE_WORKER_POOL
+      - NUM_WORKERS
+      - BATCH_SIZE
     # batasan swap memory
     memswap_limit: 4G
     # batasan resource untuk eksperimen

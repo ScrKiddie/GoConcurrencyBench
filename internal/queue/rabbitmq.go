@@ -6,7 +6,7 @@ import (
 
 	"log"
 	"sync"
-	"thesis-experiment/internal/entity"
+	"thesis-experiment/internal/compression"
 	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -49,7 +49,7 @@ func (r *RabbitMQService) Close() {
 
 // kirim task ke queue
 func (r *RabbitMQService) Publish(ctx context.Context, id, fileName string) error {
-	body, _ := json.Marshal(entity.TaskPayload{ID: id, FileName: fileName})
+	body, _ := json.Marshal(compression.TaskPayload{ID: id, FileName: fileName})
 	return r.channel.PublishWithContext(ctx, "", r.queueName, false, false, amqp.Publishing{
 		ContentType: "application/json",
 		Body:        body,
@@ -59,13 +59,13 @@ func (r *RabbitMQService) Publish(ctx context.Context, id, fileName string) erro
 // ambil task dari queue dalam bentuk batch
 // fungsi ini menunggu sampai jumlah task sesuai batchsize
 // atau sampai timeout tercapai
-func (r *RabbitMQService) ConsumeBatch(ctx context.Context, batchSize int, timeout time.Duration, handler func([]entity.TaskPayload) error) error {
+func (r *RabbitMQService) ConsumeBatch(ctx context.Context, batchSize int, timeout time.Duration, handler func([]compression.TaskPayload) error) error {
 	msgs, err := r.channel.Consume(r.queueName, "", false, false, false, false, nil)
 	if err != nil {
 		return err
 	}
 
-	var batch []entity.TaskPayload
+	var batch []compression.TaskPayload
 	var deliveries []amqp.Delivery
 	timer := time.NewTimer(timeout)
 
@@ -77,7 +77,7 @@ func (r *RabbitMQService) ConsumeBatch(ctx context.Context, batchSize int, timeo
 			if !ok {
 				return nil
 			}
-			var p entity.TaskPayload
+			var p compression.TaskPayload
 			if err := json.Unmarshal(msg.Body, &p); err == nil {
 				batch = append(batch, p)
 				deliveries = append(deliveries, msg)

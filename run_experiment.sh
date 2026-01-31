@@ -25,6 +25,14 @@ echo "--------------------------------------------------"
 echo "Building Worker Image..."
 docker-compose --compatibility build worker
 
+# start rabbitmq sekali di awal agar metric persistent
+echo "Starting RabbitMQ..."
+docker-compose --compatibility up -d rabbitmq
+echo "Waiting for RabbitMQ..."
+sleep 20
+
+# buat folder logs jika belum ada
+mkdir -p results/logs
 
 # loop utama untuk setiap skenario
 for scenario in "${SCENARIOS[@]}"; do
@@ -68,12 +76,12 @@ for scenario in "${SCENARIOS[@]}"; do
 
             # bersihkan hasil kompresi sebelumnya
             docker-compose --compatibility run --rm -v "$(pwd)/storage/compressed:/data" alpine sh -c "rm -rf /data/*" > /dev/null 2>&1
-            # reset kontainer dan volume
-            docker-compose down --volumes --remove-orphans > /dev/null 2>&1
             
-            # start rabbitmq dan tunggu sampai ready
-            docker-compose --compatibility up -d rabbitmq > /dev/null 2>&1
-            sleep 30
+            # hapus kontainer worker dan seeder
+            docker-compose rm -s -f -v worker seeder > /dev/null 2>&1
+            
+            # bersihkan queue sebelum tes dimulai
+            docker-compose exec -T rabbitmq rabbitmqctl purge_queue image_tasks > /dev/null 2>&1
             
             # masukkan task ke queue
             echo "    Seeding $count images..."
@@ -82,9 +90,6 @@ for scenario in "${SCENARIOS[@]}"; do
             echo "    Starting Worker..."
             LOG_FILE="results/logs/${NAME}_${count}_run${i}.log"
             
-            docker-compose --compatibility up -d rabbitmq
-            sleep 15
-
             # jalankan worker dan simpan log
             docker-compose --compatibility up --exit-code-from worker worker > "$LOG_FILE" 2>&1
             EXIT_CODE=$?
@@ -94,6 +99,7 @@ for scenario in "${SCENARIOS[@]}"; do
             # deteksi error dan oom
             if [ $EXIT_CODE -ne 0 ]; then
                 echo -e "${CYAN}    [!] Worker exited with code $EXIT_CODE. Checking for OOM...${NC}"
+                echo "    [!] Worker exited with code $EXIT_CODE. Checking for OOM..." >> "$LOG_FILE"
                 
                 # cek oom dari docker inspect
                 IS_OOM=$(docker inspect exp_worker --format '{{.State.OOMKilled}}' 2>/dev/null)
@@ -102,18 +108,20 @@ for scenario in "${SCENARIOS[@]}"; do
                 if [ "$IS_OOM" == "true" ]; then
                     ERROR_MSG="FAILED_OOM"
                     echo -e "${CYAN}    [INFO] OOM Detected (Source: Docker Inspect)${NC}"
+                    echo "    [INFO] OOM Detected (Source: Docker Inspect)" >> "$LOG_FILE"
                 elif [ $EXIT_CODE -eq 137 ]; then
                     # exit code 137 biasanya berarti killed by oom
                      ERROR_MSG="FAILED_OOM"
                      echo -e "${CYAN}    [INFO] OOM Detected (Source: Exit Code 137)${NC}"
+                     echo "    [INFO] OOM Detected (Source: Exit Code 137)" >> "$LOG_FILE"
                 else
                     ERROR_MSG="FAILED_ERROR_$EXIT_CODE"
                 fi
 
                 # tampilkan log kernel jika oom
                 if [ "$ERROR_MSG" == "FAILED_OOM" ]; then
-                     echo "    [INFO] Kernel OOM Logs:"
-                     dmesg | grep -E -i "oom|killed process|out of memory" | tail -n 5
+                     echo "    [INFO] Kernel OOM Logs:" | tee -a "$LOG_FILE"
+                     dmesg | grep -E -i "oom|killed process|out of memory" | tail -n 5 | tee -a "$LOG_FILE"
                 fi
                 
                 # catat error ke csv agar data tetap lengkap

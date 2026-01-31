@@ -6,7 +6,6 @@ import (
 	"os"
 	"strconv"
 	"thesis-experiment/internal/compression"
-	"thesis-experiment/internal/entity"
 	"thesis-experiment/internal/queue"
 	"time"
 
@@ -64,7 +63,7 @@ func main() {
 	
 	// consume batch dari queue lalu jalankan eksperimen
 	// timeout 1 menit untuk memastikan semua task masuk
-	err = mq.ConsumeBatch(context.Background(), batchSize, 1*time.Minute, func(tasks []entity.TaskPayload) error {
+	err = mq.ConsumeBatch(context.Background(), batchSize, 1*time.Minute, func(tasks []compression.TaskPayload) error {
 		return svc.RunExperiment(context.Background(), tasks)
 	})
 	if err != nil {

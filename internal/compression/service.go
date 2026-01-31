@@ -9,13 +9,18 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	"strings"
 	"sync"
-	"thesis-experiment/internal/entity"
 	"time"
-
 	"thesis-experiment/vips"
 	"github.com/shirou/gopsutil/v3/process"
 )
+
+// struktur data untuk task yang dikirim lewat queue
+type TaskPayload struct {
+	ID       string `json:"id"`
+	FileName string `json:"file_name"`
+}
 
 type Config struct {
 	UploadDir     string
@@ -36,7 +41,7 @@ func NewService(cfg Config) *Service {
 
 // fungsi utama untuk menjalankan eksperimen
 // di sini saya mengukur waktu eksekusi cpu dan ram
-func (s *Service) RunExperiment(ctx context.Context, tasks []entity.TaskPayload) error {
+func (s *Service) RunExperiment(ctx context.Context, tasks []TaskPayload) error {
 	// bersihkan memori sebelum mulai agar pengukuran tidak bias
 	runtime.GC()
 	debug.FreeOSMemory()
@@ -82,7 +87,7 @@ func (s *Service) RunExperiment(ctx context.Context, tasks []entity.TaskPayload)
 
 // model sekuensial
 // proses satu per satu secara berurutan
-func (s *Service) runSequential(tasks []entity.TaskPayload) {
+func (s *Service) runSequential(tasks []TaskPayload) {
 	for _, t := range tasks {
 		s.processImage(t)
 	}
@@ -91,11 +96,11 @@ func (s *Service) runSequential(tasks []entity.TaskPayload) {
 // model konkuren naif
 // setiap task langsung dibuatkan goroutine baru
 // tidak ada batasan jumlah goroutine yang berjalan
-func (s *Service) runNaive(tasks []entity.TaskPayload) {
+func (s *Service) runNaive(tasks []TaskPayload) {
 	var wg sync.WaitGroup
 	for _, t := range tasks {
 		wg.Add(1)
-		go func(task entity.TaskPayload) {
+		go func(task TaskPayload) {
 			defer wg.Done()
 			s.processImage(task)
 		}(t)
@@ -106,8 +111,8 @@ func (s *Service) runNaive(tasks []entity.TaskPayload) {
 // model worker pool
 // jumlah goroutine dibatasi sesuai numworkers
 // task didistribusikan lewat channel
-func (s *Service) runWorkerPool(tasks []entity.TaskPayload) {
-	jobs := make(chan entity.TaskPayload, len(tasks))
+func (s *Service) runWorkerPool(tasks []TaskPayload) {
+	jobs := make(chan TaskPayload, len(tasks))
 	var wg sync.WaitGroup
 
 	// buat worker sejumlah yang dikonfigurasi
@@ -129,9 +134,11 @@ func (s *Service) runWorkerPool(tasks []entity.TaskPayload) {
 }
 
 // proses kompresi gambar menggunakan libvips
-func (s *Service) processImage(t entity.TaskPayload) {
+func (s *Service) processImage(t TaskPayload) {
 	src := filepath.Join(s.Config.UploadDir, t.FileName)
-	dst := filepath.Join(s.Config.CompressedDir, fmt.Sprintf("%s.webp", t.ID))
+	
+	baseName := strings.TrimSuffix(t.FileName, filepath.Ext(t.FileName))
+	dst := filepath.Join(s.Config.CompressedDir, fmt.Sprintf("%s.webp", baseName))
 
 	// gunakan mode sequential unbuffered untuk hemat memori
 	importParams := &vips.LoadOptions{
