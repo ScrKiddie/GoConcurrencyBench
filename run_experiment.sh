@@ -34,6 +34,12 @@ sleep 20
 # buat folder logs jika belum ada
 mkdir -p results/logs
 
+# inisialisasi file csv jika belum ada dan atur permission agar bisa ditulisi oleh user maupun docker (root)
+if [ ! -f results/experiment_data.csv ]; then
+    echo "Timestamp,Scenario,Total_Images,Duration_Sec,CPU_Avg_Percent,Peak_RAM_MB,Num_Workers" > results/experiment_data.csv
+fi
+chmod 666 results/experiment_data.csv
+
 # loop utama untuk setiap skenario
 for scenario in "${SCENARIOS[@]}"; do
     # parse konfigurasi dari string format
